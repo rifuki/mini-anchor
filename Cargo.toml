@@ -1,0 +1,8 @@
+[package]
+name = "mini-anchor"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+solana-program = "3.0.0"
+mini-anchor-macro = { path = "./mini-anchor-macro" }
