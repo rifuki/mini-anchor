@@ -1,8 +1,17 @@
 [package]
 name = "mini-anchor"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+description = "A minimal Anchor-like framework for Solana (learning project)"
+license = "MIT"
+repository = "https://github.com/rifuki/mini-anchor"
+keywords = ["solana", "anchor", "blockchain", "programming"]
+categories = ["cryptography", "development-tools"]
+
+[workspace]
+members = [".", "mini-anchor-macro"]
 
 [dependencies]
-solana-program = "3.0.0"
-mini-anchor-macro = { path = "./mini-anchor-macro" }
+solana-program = "2.3.0"
+mini-anchor-macro = { path = "./mini-anchor-macro", version = "0.1.0" }
+blake3 = "=1.5.5"

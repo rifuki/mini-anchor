@@ -1,7 +1,12 @@
 [package]
 name = "mini-anchor-macro"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+description = "Procedural macros for the mini-anchor framework"
+license = "MIT"
+repository = "https://github.com/rifuki/mini-anchor"
+keywords = ["solana", "anchor", "macro", "proc-macro"]
+categories = ["development-tools::procedural-macro-helpers"]
 
 [lib]
 proc-macro = true

@@ -90,18 +90,23 @@ pub fn account(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 None => {
                     return SynError::new(
                         field.span(),
-                        "String fields must have a #[max_len(N)] attribute"
-                    ).into_compile_error()
-                        .into();
+                        "String fields must have a #[max_len(N)] attribute",
+                    )
+                    .into_compile_error()
+                    .into();
                 }
             }
         } else if type_str.contains("Vec") {
             match max_len {
                 Some(len) => quote! { (4 + #len) },
-                None => { return SynError::new(
-                    field.span(),
-                    "Vec fields require #[max_len(N)] attribute"
-                ).into_compile_error().into()}
+                None => {
+                    return SynError::new(
+                        field.span(),
+                        "Vec fields require #[max_len(N)] attribute",
+                    )
+                    .into_compile_error()
+                    .into()
+                }
             }
         } else {
             quote! { std::mem::size_of::<#field_type>()}
@@ -112,7 +117,11 @@ pub fn account(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let vis = &input.vis;
 
-    let attrs: Vec<_> = input.attrs.iter().filter(|a| !a.path().is_ident("max_len")).collect();
+    let attrs: Vec<_> = input
+        .attrs
+        .iter()
+        .filter(|a| !a.path().is_ident("max_len"))
+        .collect();
 
     quote! {
         #(#attrs)*
@@ -170,7 +179,7 @@ pub fn account(_attr: TokenStream, item: TokenStream) -> TokenStream {
                     #(
                         #field_names: {
                             let (value, read) = <#field_types as ::mini_anchor::AnchorDeserialize>::deserialize(&data[offset..])?;
-                            offset += read; 
+                            offset += read;
                             value
                         }
                     ),*
@@ -194,19 +203,22 @@ fn generate_discriminator(name: &str) -> [u8; 8] {
 }
 
 fn extract_max_length(attrs: &[syn::Attribute]) -> Option<usize> {
-    for attr in attrs {
-        if attr.path().is_ident("max_len") {
-            if let Meta::List(meta_list) = &attr.meta {
-                let tokens = meta_list.tokens.clone();
-                if let Ok(expr) = syn::parse2::<syn::Expr>(tokens) {
-                    if let syn::Expr::Lit(expr_lit) = expr {
-                        if let syn::Lit::Int(lit_int) = &expr_lit.lit {
-                            return lit_int.base10_parse::<usize>().ok();
-                        }
-                    }
-                }
-            }
-        } 
-    }
-    None
+    attrs.iter().find_map(|attr| {
+        if !attr.path().is_ident("max_len") {
+            return None;
+        }
+
+        let Meta::List(meta) = &attr.meta else {
+            return None;
+        };
+        let expr = syn::parse2::<syn::Expr>(meta.tokens.clone()).ok()?;
+        let syn::Expr::Lit(expr_lit) = expr else {
+            return None;
+        };
+        let syn::Lit::Int(lit) = expr_lit.lit else {
+            return None;
+        };
+
+        lit.base10_parse::<usize>().ok()
+    })
 }

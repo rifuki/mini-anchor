@@ -1,4 +1,4 @@
-use crate::traits::{AnchorSerialize, AnchorDeserialize};
+use crate::traits::{AnchorDeserialize, AnchorSerialize};
 
 impl<T: AnchorSerialize> AnchorSerialize for Vec<T> {
     fn serialize(&self, buf: &mut [u8]) -> Result<usize, &'static str> {
