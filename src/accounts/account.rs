@@ -22,7 +22,7 @@ impl<'info, T> Account<'info, T> {
 }
 
 // Deserialize account data into T
-impl<'info, T: AnchorDeserialize> Account<'info, T> {
+impl<T: AnchorDeserialize> Account<'_, T> {
     pub fn data(&self) -> Result<T, &'static str> {
         let data = self.info.data.borrow();
         let (value, _) = T::deserialize(&data)?;
