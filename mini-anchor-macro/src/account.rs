@@ -38,10 +38,9 @@ pub fn account_impl(item: TokenStream) -> TokenStream {
 
         // Check for #[max_len(N)] attribute
         let max_len = extract_max_length(&field.attrs);
-        // Generate space calculation based on type and max_len
-        let type_str = quote!(#field_type).to_string();
 
-        let space_calc = if type_str.contains("String") {
+        // Generate space calculation based on type and max_len
+        let space_calc = if is_string_type(field_type) {
             match max_len {
                 Some(len) => quote! { 4 + #len },
                 None => {
@@ -53,10 +52,20 @@ pub fn account_impl(item: TokenStream) -> TokenStream {
                     .into();
                 }
             }
-        } else if type_str.contains("Vec") {
-            match max_len {
-                Some(len) => quote! { (4 + #len) },
-                None => {
+        } else if is_vec_type(field_type) {
+            // Extract inner type of Vec<T>
+            let inner_type = extract_vec_inner_type(field_type);
+
+            match (max_len, inner_type) {
+                (Some(len), Some(inner)) => {
+                    if is_vec_type(inner) {
+                        return SynError::new(field.span(), "Nested Vec<Vec<T>> is not supported")
+                            .into_compile_error()
+                            .into();
+                    };
+                    quote! { 4 + (#len * std::mem::size_of::<#inner>()) }
+                }
+                (None, _) => {
                     return SynError::new(
                         field.span(),
                         "Vec fields require #[max_len(N)] attribute",
@@ -64,6 +73,66 @@ pub fn account_impl(item: TokenStream) -> TokenStream {
                     .into_compile_error()
                     .into()
                 }
+                (_, None) => {
+                    return SynError::new(field.span(), "Unable to determine inner type of Vec")
+                        .into_compile_error()
+                        .into()
+                }
+            }
+        } else if is_option_type(field_type) {
+            let inner_type = match extract_option_inner_type(field_type) {
+                Some(inner) => inner,
+                None => {
+                    return SynError::new(field.span(), "Unable to parse Option<T> inner type")
+                        .into_compile_error()
+                        .into()
+                }
+            };
+
+            // Disallow nested Option<Option<T>>
+            if is_option_type(inner_type) {
+                return SynError::new(field.span(), "Nested Option<Option<T>> is not supported")
+                    .into_compile_error()
+                    .into();
+            }
+
+            if is_string_type(inner_type) {
+                match max_len {
+                    Some(len) => quote! { 1 + (4 + #len) },
+                    None => {
+                        return SynError::new(
+                            field.span(),
+                            "Option<String> fields must have a #[max_len(N)] attribute",
+                        )
+                        .into_compile_error()
+                        .into()
+                    }
+                }
+            } else if is_vec_type(inner_type) {
+                let vec_inner = extract_vec_inner_type(inner_type);
+                match (max_len, vec_inner) {
+                    (Some(len), Some(vec_inner_type)) => {
+                        quote! { 1 + (4 + (#len * std::mem::size_of::<#vec_inner_type>())) }
+                    }
+                    (None, _) => {
+                        return SynError::new(
+                            field.span(),
+                            "Option<Vec<T>> fields require #[max_len(N)] attribute",
+                        )
+                        .into_compile_error()
+                        .into()
+                    }
+                    (_, None) => {
+                        return SynError::new(
+                            field.span(),
+                            "Unable to determine inner type of Vec inside Option",
+                        )
+                        .into_compile_error()
+                        .into()
+                    }
+                }
+            } else {
+                quote! { 1 + std::mem::size_of::<#inner_type>() }
             }
         } else {
             quote! { std::mem::size_of::<#field_type>()}
@@ -94,56 +163,72 @@ pub fn account_impl(item: TokenStream) -> TokenStream {
             // Dynamic space calculation with max_len support!
             pub const SPACE: usize = 8 #(+ #space_calculation)*;
 
-            // Serialize to bytes (safe, no unsafe)
-            pub fn try_serialize(&self, buf: &mut [u8]) -> Result<(), &'static str> {
+            // Wrapper for serialization
+            pub fn try_serialize(&self, buf: &mut [u8]) -> Result<(), ::mini_anchor::solana_program::program_error::ProgramError> {
+                <Self as ::mini_anchor::AnchorSerialize>::serialize(self, buf)?;
+                Ok(())
+            }
+
+            // Wrapper for deserialization
+            pub fn try_deserialize(data: &[u8]) -> Result<Self, ::mini_anchor::solana_program::program_error::ProgramError> {
+                let (instance, _size) = <Self as ::mini_anchor::AnchorDeserialize>::deserialize(data)?;
+                Ok(instance)
+            }
+        }
+
+        // Serialize implementation
+        impl ::mini_anchor::AnchorSerialize for #struct_name {
+            // Serialize into a byte slice
+            fn serialize(&self, buf: &mut [u8]) -> Result<usize, ::mini_anchor::solana_program::program_error::ProgramError> {
                 if buf.len() < Self::SPACE {
-                    return Err("Buffer too small for account");
+                    return Err(::mini_anchor::solana_program::program_error::ProgramError::AccountDataTooSmall);
                 }
 
                 // Write discriminator
                 buf[..8].copy_from_slice(&Self::DISCRIMINATOR);
                 let mut offset = 8;
 
-                // Write each field using trait
                 #(
                     {
                         let written = <#field_types as ::mini_anchor::AnchorSerialize>::serialize(
                             &self.#field_names,
-                            &mut buf[offset..] // This is safe as we checked buffer size above
-
-                        )?;
-                        offset += written;
+                            &mut buf[offset..]
+                        );
+                        offset += written?;
                     }
                 )*
 
-                Ok(())
+                Ok(offset)
             }
+        }
 
-            pub fn try_deserialize(data: &[u8]) -> Result<Self, &'static str> {
-                if data.len() < Self::SPACE {
-                    return Err("Data too short for account");
+        // Deserialize implementation
+        impl ::mini_anchor::AnchorDeserialize for #struct_name {
+            // Deserialize from a byte slice
+            fn deserialize(data: &[u8]) -> Result<(Self, usize), ::mini_anchor::solana_program::program_error::ProgramError> {
+                if data.len() < 8 { // At least need discriminator
+                    return Err(::mini_anchor::solana_program::program_error::ProgramError::AccountDataTooSmall);
                 }
 
                 // Check discriminator
                 if data[..8] != Self::DISCRIMINATOR {
-                    return Err("Discriminator mismatch");
+                    return Err(::mini_anchor::solana_program::program_error::ProgramError::InvalidAccountData);
                 }
 
                 let mut offset = 8;
 
-                // Read each field using trait
-                Ok(Self {
+                Ok((Self {
                     #(
                         #field_names: {
                             let (value, read) = <#field_types as ::mini_anchor::AnchorDeserialize>::deserialize(&data[offset..])?;
                             offset += read;
                             value
                         }
+
                     ),*
-                })
+                }, offset))
             }
         }
-
     }
     .into()
 }
@@ -178,4 +263,74 @@ fn extract_max_length(attrs: &[syn::Attribute]) -> Option<usize> {
 
         lit.base10_parse::<usize>().ok()
     })
+}
+
+fn extract_vec_inner_type(ty: &syn::Type) -> Option<&syn::Type> {
+    let syn::Type::Path(type_path) = ty else {
+        return None;
+    };
+
+    let segment = type_path.path.segments.last()?;
+    if segment.ident != "Vec" {
+        return None;
+    }
+
+    let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
+        return None;
+    };
+
+    match args.args.iter().collect::<Vec<_>>().as_slice() {
+        [syn::GenericArgument::Type(inner_type)] => Some(inner_type),
+        _ => None,
+    }
+}
+
+fn extract_option_inner_type(ty: &syn::Type) -> Option<&syn::Type> {
+    let syn::Type::Path(type_path) = ty else {
+        return None;
+    };
+
+    let segment = type_path.path.segments.last()?;
+    if segment.ident != "Option" {
+        return None;
+    }
+
+    let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
+        return None;
+    };
+
+    match args.args.iter().collect::<Vec<_>>().as_slice() {
+        [syn::GenericArgument::Type(inner_type)] => Some(inner_type),
+        _ => None,
+    }
+}
+
+fn is_string_type(ty: &syn::Type) -> bool {
+    let syn::Type::Path(type_path) = ty else {
+        return false;
+    };
+    let Some(segment) = type_path.path.segments.last() else {
+        return false;
+    };
+    segment.ident == "String"
+}
+
+fn is_vec_type(ty: &syn::Type) -> bool {
+    let syn::Type::Path(type_path) = ty else {
+        return false;
+    };
+    let Some(segment) = type_path.path.segments.last() else {
+        return false;
+    };
+    segment.ident == "Vec"
+}
+
+fn is_option_type(ty: &syn::Type) -> bool {
+    let syn::Type::Path(type_path) = ty else {
+        return false;
+    };
+    let Some(segment) = type_path.path.segments.last() else {
+        return false;
+    };
+    segment.ident == "Option"
 }

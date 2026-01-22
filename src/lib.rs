@@ -2,7 +2,7 @@ mod accounts;
 mod traits;
 mod types;
 
-pub use solana_program::{self, account_info::AccountInfo};
+pub use solana_program;
 
 pub use mini_anchor_macro::{account, declare_id, Accounts};
 

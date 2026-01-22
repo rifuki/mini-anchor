@@ -1,9 +1,11 @@
+use solana_program::program_error::ProgramError;
+
 use crate::traits::{AnchorDeserialize, AnchorSerialize};
 
 impl<T: AnchorSerialize> AnchorSerialize for Option<T> {
-    fn serialize(&self, buf: &mut [u8]) -> Result<usize, &'static str> {
+    fn serialize(&self, buf: &mut [u8]) -> Result<usize, ProgramError> {
         if buf.is_empty() {
-            return Err("Buffer too small for Option");
+            return Err(ProgramError::InvalidAccountData);
         }
 
         match self {
@@ -18,16 +20,12 @@ impl<T: AnchorSerialize> AnchorSerialize for Option<T> {
             }
         }
     }
-
-    fn size() -> usize {
-        0 // Dynamic size
-    }
 }
 
 impl<T: AnchorDeserialize> AnchorDeserialize for Option<T> {
-    fn deserialize(data: &[u8]) -> Result<(Self, usize), &'static str> {
+    fn deserialize(data: &[u8]) -> Result<(Self, usize), ProgramError> {
         if data.is_empty() {
-            return Err("Data too short for Option");
+            return Err(ProgramError::InvalidAccountData);
         }
 
         match data[0] {
@@ -36,11 +34,7 @@ impl<T: AnchorDeserialize> AnchorDeserialize for Option<T> {
                 let (value, read) = T::deserialize(&data[1..])?;
                 Ok((Some(value), 1 + read))
             }
-            _ => Err("Invalid Option discriminant"),
+            _ => Err(ProgramError::InvalidAccountData),
         }
-    }
-
-    fn size() -> usize {
-        0 // Dynamic size
     }
 }

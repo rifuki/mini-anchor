@@ -1,5 +1,5 @@
 use crate::traits::AnchorDeserialize;
-use solana_program::{account_info::AccountInfo, pubkey::Pubkey};
+use solana_program::{account_info::AccountInfo, program_error::ProgramError, pubkey::Pubkey};
 
 use std::marker::PhantomData;
 
@@ -23,7 +23,7 @@ impl<'info, T> Account<'info, T> {
 
 // Deserialize account data into T
 impl<T: AnchorDeserialize> Account<'_, T> {
-    pub fn data(&self) -> Result<T, &'static str> {
+    pub fn data(&self) -> Result<T, ProgramError> {
         let data = self.info.data.borrow();
         let (value, _) = T::deserialize(&data)?;
         Ok(value)

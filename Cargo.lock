@@ -544,7 +544,7 @@ dependencies = [
 
 [[package]]
 name = "mini-anchor"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "blake3",
  "mini-anchor-macro",
@@ -553,7 +553,7 @@ dependencies = [
 
 [[package]]
 name = "mini-anchor-macro"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "bs58",
  "proc-macro2",

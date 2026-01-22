@@ -1,9 +1,11 @@
+use solana_program::program_error::ProgramError;
+
 use crate::traits::{AnchorDeserialize, AnchorSerialize};
 
 impl<T: AnchorSerialize> AnchorSerialize for Vec<T> {
-    fn serialize(&self, buf: &mut [u8]) -> Result<usize, &'static str> {
+    fn serialize(&self, buf: &mut [u8]) -> Result<usize, ProgramError> {
         if buf.len() < 4 {
-            return Err("Buffer too small for Vec length");
+            return Err(ProgramError::InvalidAccountData);
         }
 
         // Write length prefix (u32 little-endian)
@@ -18,20 +20,19 @@ impl<T: AnchorSerialize> AnchorSerialize for Vec<T> {
 
         Ok(offset)
     }
-
-    fn size() -> usize {
-        0 // Dynamic size
-    }
 }
 
 impl<T: AnchorDeserialize> AnchorDeserialize for Vec<T> {
-    fn deserialize(data: &[u8]) -> Result<(Self, usize), &'static str> {
+    fn deserialize(data: &[u8]) -> Result<(Self, usize), ProgramError> {
         if data.len() < 4 {
-            return Err("Data too short for Vec length");
+            return Err(ProgramError::InvalidAccountData);
         }
 
-        let len =
-            u32::from_le_bytes(data[..4].try_into().map_err(|_| "Invalid u32 length")?) as usize;
+        let len = u32::from_le_bytes(
+            data[..4]
+                .try_into()
+                .map_err(|_| ProgramError::InvalidAccountData)?,
+        ) as usize;
 
         let mut offset = 4;
         let mut result = Vec::with_capacity(len);
@@ -43,9 +44,5 @@ impl<T: AnchorDeserialize> AnchorDeserialize for Vec<T> {
         }
 
         Ok((result, offset))
-    }
-
-    fn size() -> usize {
-        0 // Dynamic size
     }
 }

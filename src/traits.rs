@@ -1,11 +1,9 @@
+use solana_program::program_error::ProgramError;
+
 pub trait AnchorSerialize {
-    fn serialize(&self, buf: &mut [u8]) -> Result<usize, &'static str>;
-    // Unused for variable-length types like String
-    fn size() -> usize;
+    fn serialize(&self, buf: &mut [u8]) -> Result<usize, ProgramError>;
 }
 
 pub trait AnchorDeserialize: Sized {
-    fn deserialize(data: &[u8]) -> Result<(Self, usize), &'static str>;
-    // Unused for variable-length types like String
-    fn size() -> usize;
+    fn deserialize(data: &[u8]) -> Result<(Self, usize), ProgramError>;
 }
